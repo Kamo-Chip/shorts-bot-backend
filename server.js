@@ -209,10 +209,11 @@ app.post("/transcribe-audio", async (req, res) => {
 
 // Endpoint to generate clip
 app.post("/generate-clip", async (req, res) => {
-  const { audioFile, srtFile, bgImage } = req.body;
+  const { audioFile, srtFile, bgVideo } = req.body;
   const outputFile = `generated-clips/${uuidv4()}.mp4`;
-  const command = `ffmpeg -loop 1 -i ${bgImage} -i ${audioFile} -vf "subtitles=${srtFile}:force_style='Alignment=10,Fontsize=36'" -c:v libx264 -tune stillimage -c:a aac -b:a 192k -pix_fmt yuv420p -shortest ${outputFile}`;
+  const command = `ffmpeg -i ${bgVideo} -i ${audioFile} -vf "subtitles=${srtFile}:force_style='Alignment=10,Fontsize=36'" -c:v libx264 -c:a aac -b:a 192k -pix_fmt yuv420p -shortest ${outputFile}`;
 
+  console.log("Generating clip...");
   exec(command, (error, stdout, stderr) => {
     if (error) {
       console.error("Error generating clip: ", error.message);
