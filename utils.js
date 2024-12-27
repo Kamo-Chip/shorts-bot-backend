@@ -1,7 +1,19 @@
 const fs = require("fs");
 const { v4: uuidv4 } = require("uuid");
+const axios = require("axios");
+const path = require("path");
+const FormData = require("form-data");
+const { exec } = require("child_process");
 
-const SYSTEM_PROMPT = `You are a world class YouTube short creator that transforms Reddit posts into engaging YouTube shorts, ensuring the final output is no longer than 1 minute. Your goal is to condense the story while keeping it fun, engaging, and true to the original tone. Prioritize punchy storytelling, focus on the key moments, and leave out unnecessary details. Maintain humor or drama as appropriate to capture the audience's attention. Include a clear beginning, middle, and end, and avoid rushing the delivery. The intro should always match the one you are given, only replace profanity.
+// ElevenLabs Configuration
+const ELEVENLABS_API_URL = "https://api.elevenlabs.io/v1/text-to-speech";
+const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
+
+// OpenAI Configuration
+const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
+const OPENAI_WHISPER_API_URL = "https://api.openai.com/v1/audio/transcriptions";
+
+const SYSTEM_PROMPT = `You are a world class YouTube short creator that transforms Reddit posts into engaging YouTube shorts, ensuring the final output is no longer than 1 minute. Your goal is to condense the story while keeping it fun, engaging, and true to the original tone. Prioritize punchy storytelling, focus on the key moments, and leave out unnecessary details. Maintain humor or drama as appropriate to capture the audience's attention. Include a clear beginning, middle, and end, and avoid rushing the delivery. The intro should always match the one you are given, only replace profanity. Add 'Subscribe for more stories' as the last line.
 
 Example Post Input:
 "Today I Fucked Up by accidentally getting sexual with my dentist, again.
@@ -15,9 +27,48 @@ Never going back."
 
 Example Short Output:
 "Today I messed up by accidentally getting sexual with my dentist, again!
-First visit, my dentist says something about 'us being strangers.' And I reply, 'Oh, you're not a stranger—you’ve been in my mouth for 20 minutes!' His face turned red, but he stayed professional.
-Second visit, I’m determined to behave. Five minutes in, he’s red-faced again, and I’m like, 'What did I do this time?' Then it hits me: he’s wearing grape-flavored gloves... and I’ve been licking his fingers the whole time.
-Yeah, I need a new dentist."
+First visit, my dentist says something about 'us being strangers.' And I reply, 'Oh, you're not a stranger—you've been in my mouth for 20 minutes!' His face turned red, but he stayed professional.
+Second visit, I'm determined to behave. Five minutes in, he's red-faced again, and I'm like, 'What did I do this time?' Then it hits me: he's wearing grape-flavored gloves... and I've been licking his fingers the whole time.
+Yeah, I need a new dentist... Subscribe for more stories"
+`;
+
+const TEXT_SYSTEM_PROMPT = `
+  You are a creative assistant that transforms Reddit posts into engaging and entertaining text conversations for YouTube Shorts.
+  
+  Your outputs must:
+  - Begin with a captivating and attention-grabbing first message.
+  - Use relatable and humorous dialogue between 2 characters to convey the story of the post.
+  - Stay concise and fit within a 1-minute format.
+  - End with a punchline, takeaway, or memorable conclusion.
+  - Prioritize humor, exaggeration, and dynamism while keeping the essence of the post intact.
+  - Avoid unnecessary complexity to maximize viewer engagement.
+  - Do not style the output e.g do not add asterisks. The text is plain text
+  - End with "Subscribe for more funny chats"
+  - Output should be a json array, for example:
+    [{speaker: "John", text: "Hello there", sex: "m"}, {speaker: "Grievous", text: "Ah general Kenobi", sex: "m"}, { "speaker": "Narrator", "text": "Subscribe for more funny chats!", sex: "m" }]
+
+  Some abbreviations to take note of. When you see them write out the full term:
+  - AITA: Am I The Asshole
+  - TIFU: Today I Fucked Up
+
+  Example Post Input:
+  "My (27F) boyfriend (29M) can't get it up and refuses to see a professional. We've been together for over a year. He's healthy, successful, and we get along great otherwise. But he says porn has made it hard for him to get aroused IRL, and he won't get help. I feel rejected and don't know what to do."
+
+  Example Output:
+  [
+  { "speaker": "Friend", "text": "So, how's Mr. Perfect treating you?", "sex": "f" },
+  { "speaker": "Girlfriend", "text": "Honestly? He's smart, successful, kind… BUT…", "sex": "f" },
+  { "speaker": "Friend", "text": "Uh oh, what's the 'but'? Bad breath? Lives with his mom?", "sex": "f" },
+  { "speaker": "Girlfriend", "text": "Worse… he can't, um, get it up. And he refuses to see a professional.", "sex": "f" },
+  { "speaker": "Friend", "text": "What?! Wait—like, ever?", "sex": "f" },
+  { "speaker": "Girlfriend", "text": "Since day one. He says he got too used to… *the hub*.", "sex": "f" },
+  { "speaker": "Friend", "text": "Oh no. So, he's buffering in real life?", "sex": "f" },
+  { "speaker": "Girlfriend", "text": "Exactly! Out of every 10 tries, we get maybe 1 success, 3-4 false starts, and 5-6… complete crashes.", "sex": "f" },
+  { "speaker": "Friend", "text": "Girl, that's not romance, that's tech support!", "sex": "f" },
+  { "speaker": "Girlfriend", "text": "Right?! I love him, but I'm running out of 'it's okays' to give.", "sex": "f" },
+  { "speaker": "Friend", "text": "Listen, he either reboots himself with professional help, or you upgrade to better hardware.", "sex": "f" },
+  { "speaker": "Narrator", "text": "Subscribe for more funny chats!", "sex": "m" }
+]
 `;
 
 const secondsToSrtTime = (seconds) => {
@@ -33,6 +84,7 @@ const secondsToSrtTime = (seconds) => {
 
 const createSrt = (subtitleArray) => {
   let srtContent = "";
+  const outputFile = `generated-subtitles/${uuidv4()}.srt`;
   subtitleArray.forEach((item, index) => {
     const lineNumber = index + 1;
     const startTime = secondsToSrtTime(item.start);
@@ -42,20 +94,125 @@ const createSrt = (subtitleArray) => {
     srtContent += `${lineNumber}\n${startTime} --> ${endTime}\n${text}\n\n`;
   });
 
-  fs.writeFile(
-    `generated-subtitles/${uuidv4()}.srt`,
-    srtContent.trim(),
-    (err) => {
-      if (err) {
-        console.error("Error writing file: ", err);
-      } else {
-        console.log("SRT file saved");
-      }
+  fs.writeFile(outputFile, srtContent.trim(), (err) => {
+    if (err) {
+      console.error("Error writing file: ", err);
+    } else {
+      console.log("SRT file saved");
     }
-  );
+  });
+
+  return outputFile;
 };
 
+const generateScript = async (text) => {
+  console.log("Generating script...");
+  const scriptResponse = await axios.post(
+    OPENAI_API_URL,
+    {
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: SYSTEM_PROMPT,
+        },
+        {
+          role: "user",
+          content: `${text}`,
+        },
+      ],
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      responseType: "text",
+    }
+  );
+
+  const scriptData = JSON.parse(scriptResponse.data);
+  const script = scriptData.choices[0].message.content;
+  console.log("Successfully generated script: ", script);
+  return script;
+};
+
+const generateAudio = async (script, voiceId) => {
+  console.log("Generating audio...");
+  const outputFileName = `generated-audio/${uuidv4()}.mp3`;
+  const outputPath = path.join(__dirname, outputFileName);
+
+  const audioResponse = await axios.post(
+    `${ELEVENLABS_API_URL}/${voiceId}`,
+    {
+      text: script,
+      voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+    },
+    {
+      headers: {
+        "xi-api-key": ELEVENLABS_API_KEY,
+        "Content-Type": "application/json",
+      },
+      responseType: "arraybuffer",
+    }
+  );
+  fs.writeFileSync(outputPath, audioResponse.data);
+  console.log("Successfully generated audio: ", outputFileName);
+  return outputFileName;
+};
+
+const transcribeAudio = async (filePath) => {
+  const formData = new FormData();
+  formData.append("file", fs.createReadStream(filePath));
+  formData.append("timestamp_granularities[]", "word");
+  formData.append("model", "whisper-1");
+  formData.append("response_format", "verbose_json");
+  console.log("Transcribing audio...");
+  const response = await axios.post(OPENAI_WHISPER_API_URL, formData, {
+    headers: {
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      ...formData.getHeaders(),
+    },
+  });
+  const srtFile = createSrt(response.data.words);
+  return srtFile;
+};
+
+const generateScriptAndAudio = async (text, voiceId) => {
+  const script = await generateScript(text);
+  const outputFileName = await generateAudio(script, voiceId);
+  return { script, outputFileName };
+};
+
+const generateClip = async (audioFile, srtFile, bgVideo) => {
+  return new Promise((resolve, reject) => {
+    const outputFile = `generated-clips/${uuidv4()}.mp4`;
+    const command = `ffmpeg -i ${bgVideo} -i ${audioFile} -vf "subtitles=${srtFile}:force_style='Alignment=10,Fontsize=36'" -c:v libx264 -c:a aac -b:a 192k -pix_fmt yuv420p -shortest ${outputFile}`;
+
+    console.log("Generating clip...");
+    exec(command, (error, stdout, stderr) => {
+      if (error) {
+        console.error("Error generating clip: ", error.message);
+        reject(new Error("Error generating clip: ", error.message));
+        return;
+      }
+      if (stderr) {
+        console.error("FFmpeg stderr: ", stderr);
+      }
+      console.log("Successfully generated video: ", outputFile);
+      resolve(outputFile);
+    });
+  });
+};
 module.exports = {
   SYSTEM_PROMPT,
   createSrt,
+  ELEVENLABS_API_URL,
+  ELEVENLABS_API_KEY,
+  OPENAI_API_URL,
+  OPENAI_WHISPER_API_URL,
+  generateScriptAndAudio,
+  transcribeAudio,
+  generateClip,
+  TEXT_SYSTEM_PROMPT,
 };
