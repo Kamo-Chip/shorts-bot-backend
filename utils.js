@@ -4,6 +4,21 @@ const axios = require("axios");
 const path = require("path");
 const FormData = require("form-data");
 const { exec } = require("child_process");
+const ffmpeg = require("fluent-ffmpeg");
+const AWS = require("aws-sdk");
+
+const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
+const ffprobePath = require("@ffprobe-installer/ffprobe").path;
+
+ffmpeg.setFfmpegPath(ffmpegPath);
+ffmpeg.setFfprobePath(ffprobePath);
+
+// AWS S3 Configuration
+const s3 = new AWS.S3({
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  region: process.env.AWS_REGION,
+});
 
 // ElevenLabs Configuration
 const ELEVENLABS_API_URL = "https://api.elevenlabs.io/v1/text-to-speech";
@@ -157,25 +172,38 @@ const generateAudio = async (script, voiceId) => {
     }
   );
   fs.writeFileSync(outputPath, audioResponse.data);
+
   console.log("Successfully generated audio: ", outputFileName);
   return outputFileName;
 };
 
-const transcribeAudio = async (filePath) => {
+const transcribeAudio = async (filePath, timestampGranularities) => {
+  console.log("Transcribing audio...");
   const formData = new FormData();
   formData.append("file", fs.createReadStream(filePath));
-  formData.append("timestamp_granularities[]", "word");
+  formData.append("timestamp_granularities[]", timestampGranularities);
   formData.append("model", "whisper-1");
   formData.append("response_format", "verbose_json");
-  console.log("Transcribing audio...");
+
   const response = await axios.post(OPENAI_WHISPER_API_URL, formData, {
     headers: {
       Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
       ...formData.getHeaders(),
     },
   });
-  const srtFile = createSrt(response.data.words);
-  return srtFile;
+
+  if (timestampGranularities === "word") {
+    const srtFile = createSrt(response.data.words);
+    return srtFile;
+  } else if (timestampGranularities === "segment") {
+    const transcription = response.data.segments.map((item) => ({
+      text: item.text,
+      start: item.start,
+      end: item.end,
+    }));
+    console.log("Successfully transcribed audio: ", transcription);
+    return transcription;
+  }
 };
 
 const generateScriptAndAudio = async (text, voiceId) => {
@@ -204,6 +232,150 @@ const generateClip = async (audioFile, srtFile, bgVideo) => {
     });
   });
 };
+
+const generateTextConversation = async (text) => {
+  console.log("Generating text conversation...");
+  const textConversationResponse = await axios.post(
+    OPENAI_API_URL,
+    {
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: TEXT_SYSTEM_PROMPT,
+        },
+        {
+          role: "user",
+          content: `${text}`,
+        },
+      ],
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      responseType: "text",
+    }
+  );
+
+  const data = JSON.parse(textConversationResponse.data);
+
+  const textConversation = JSON.parse(data.choices[0].message.content);
+  console.log("Successfully generated text conversation: ", textConversation);
+
+  return textConversation;
+};
+
+const mergeFiles = async (audioFiles) => {
+  return new Promise((resolve, reject) => {
+    const outputFileName = `generated-audio/text-conversation-${uuidv4()}.mp3`;
+    const outputPath = path.join(__dirname, outputFileName);
+
+    const ffmpegCommand = ffmpeg();
+    audioFiles.forEach((file) => ffmpegCommand.input(file));
+
+    ffmpegCommand
+      .on("end", async () => {
+        audioFiles.forEach((file) => fs.unlinkSync(file));
+        console.log(
+          "Successfully generated conversation audio: ",
+          outputFileName
+        );
+        // Upload the file to S3
+        console.log("Uploading audio file to S3...");
+        const fileStream = fs.createReadStream(outputPath);
+        const params = {
+          Bucket: process.env.S3_BUCKET_NAME,
+          Key: `generated-audio/${outputFileName}`,
+          Body: fileStream,
+          ContentType: "audio/mpeg",
+          ACL: "public-read", // Makes the file publicly accessible
+        };
+
+        const uploadResult = await s3.upload(params).promise();
+
+        resolve(uploadResult.Location);
+      })
+      .on("error", (err) => {
+        console.error(err);
+        reject(new Error("Failed to merge files: ", err.message));
+      })
+      .mergeToFile(outputPath, __dirname);
+  });
+};
+
+const generateTextAudio = async (textChain) => {
+  console.log("Generating conversation audio...");
+
+  const voices = [
+    { id: "7S3KNdLDL7aRgBVRQb1z", sex: "m" },
+    { id: "bIHbv24MWmeRgasZH58o", sex: "m" },
+    { id: "SAz9YHcvj6GT2YYXdXww", sex: "f" },
+    { id: "kPzsL2i3teMYv0FxEYQ6", sex: "f" },
+    { id: "ZF6FPAbjXT4488VcRRnw", sex: "f" },
+  ];
+  const usedVoices = [];
+
+  const acknowledgedSpeakers = [
+    { speaker: "Narrator", voiceId: "nPczCjzI2devNBz1zQrb" },
+  ];
+
+  const audioFiles = [];
+  const fullTranscription = [];
+
+  for (let i = 0; i < textChain.length; i++) {
+    const { speaker, text, sex } = textChain[i];
+
+    let voiceId = "";
+
+    const currSpeaker = acknowledgedSpeakers.find(
+      (element) => element.speaker === speaker
+    );
+
+    if (currSpeaker) {
+      voiceId = currSpeaker.voiceId;
+    } else {
+      const suitableVoices = voices.filter(
+        (voice) => voice.sex === sex && !usedVoices.includes(voice.id)
+      );
+      const randomIndex = Math.floor(Math.random() * suitableVoices.length);
+      voiceId = suitableVoices[randomIndex]?.id;
+      acknowledgedSpeakers.push({ speaker, voiceId });
+      usedVoices.push(voiceId);
+    }
+
+    const audioResponse = await axios.post(
+      `${ELEVENLABS_API_URL}/${voiceId}`,
+      { text, voice_settings: { stability: 0.5, similarity_boost: 0.75 } },
+      {
+        headers: {
+          "xi-api-key": ELEVENLABS_API_KEY,
+          "Content-Type": "application/json",
+        },
+        responseType: "arraybuffer",
+      }
+    );
+
+    const tempAudioPath = path.join(
+      __dirname,
+      `generated-audio/temp-audio-${i}.mp3`
+    );
+    fs.writeFileSync(tempAudioPath, audioResponse.data);
+    const transcription = await transcribeAudio(tempAudioPath, "segment");
+    const updatedTranscription = [];
+    transcription.forEach((element) => {
+      updatedTranscription.push({ ...element, speaker });
+    });
+    fullTranscription.push(...updatedTranscription);
+    audioFiles.push(tempAudioPath);
+  }
+
+  const s3URL = await mergeFiles(audioFiles);
+  console.log("Successfully generated audio: ", s3URL);
+  return { s3URL, fullTranscription };
+};
+
 module.exports = {
   SYSTEM_PROMPT,
   createSrt,
@@ -215,4 +387,6 @@ module.exports = {
   transcribeAudio,
   generateClip,
   TEXT_SYSTEM_PROMPT,
+  generateTextConversation,
+  generateTextAudio,
 };
