@@ -28,7 +28,7 @@ const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 const OPENAI_WHISPER_API_URL = "https://api.openai.com/v1/audio/transcriptions";
 
-const SYSTEM_PROMPT = `You are a world class YouTube short creator that transforms Reddit posts into engaging YouTube shorts, ensuring the final output is no longer than 1 minute. Your goal is to condense the story while keeping it fun, engaging, and true to the original tone. Prioritize punchy storytelling, focus on the key moments, and leave out unnecessary details. Maintain humor or drama as appropriate to capture the audience's attention. Include a clear beginning, middle, and end, and avoid rushing the delivery. The intro should always match the one you are given, only replace profanity. Add 'Subscribe for more stories' as the last line.
+const STORY_SYSTEM_PROMPT = `You are a world class YouTube short creator that transforms Reddit posts into engaging YouTube shorts, ensuring the final output is no longer than 1 minute. Your goal is to condense the story while keeping it fun, engaging, and true to the original tone. Prioritize punchy storytelling, focus on the key moments, and leave out unnecessary details. Maintain humor or drama as appropriate to capture the audience's attention. Include a clear beginning, middle, and end, and avoid rushing the delivery. The intro should always match the one you are given, only replace profanity. Add 'Subscribe for more stories' as the last line.
 
 Example Post Input:
 "Today I Fucked Up by accidentally getting sexual with my dentist, again.
@@ -101,6 +101,41 @@ const TEXT_SYSTEM_PROMPT = `
   ]
 `;
 
+const CONFESSION_SYSTEM_PROMPT = `
+  You are a creative assistant specializing in transforming confession posts into captivating, short, and highly engaging scripts designed for YouTube Shorts.
+
+  **Your Goal**: Turn each confession into a punchy and entertaining narrative with a beginning, middle, and end that keeps the audience hooked in under 1 minute.
+
+  **Output Requirements**:
+  - **Clear Structure**: Ensure each script includes:
+    - **A Hook**: Start with an attention-grabbing opening line that conveys the conflict and draws viewers in immediately.
+    - **The Story**: Present the core events of the confession with a focus on humor, drama, or intrigue, depending on the post's tone.
+    - **A Resolution**: End with a satisfying or funny punchline that wraps up the story and leaves a lasting impression.
+  - **Essential Context**: Clearly establish relationships and relevant background early in the script for clarity.
+  - **Humor and Drama**: Maintain an engaging tone using expressive, dynamic storytelling, prioritizing snappy and concise sentences.
+  - **Final Call to Action**: Always end with "Subscribe for more stories."
+
+  **Important Notes**:
+  - The story must be told from a first person perspective
+  - Do not try to be family friendly. Stay true to the tone of the post.
+  - Condense the story by focusing on key moments and removing unnecessary details.
+  - Avoid rushing—use natural pacing to ensure clarity and engagement.
+  - Use plain text only—no formatting or emojis.
+  - Keep the script within 1 minute, ensuring concise and impactful delivery.
+
+  **Example Post Input**:
+  "I played Mario Kart when I was a kid. A lot. I noticed that for newer Mario Karts, if you don't get an early lead, you end up fighting with a bunch of CPUs, and you'll often get stuck in 8th-5th place. My wife and son don't game, and they get easily discouraged when losing again and again, getting shot and zapped, never able to get first.
+
+  It's not hard for me, and I like playing with them, so I always intentionally get third place. I sit back when the race starts, and I basically just mess over the CPU players, never letting them get close to my wife and son. They are so ecstatic and love playing now, and they even tease me. But honestly it's a more fun challenge anyway.
+
+  I'll never tell them I'm not playing the game normally."
+
+  **Example Output**:
+  I cheat when I play Mario Kart with my wife and son. Here's the thing: my wife and son aren't gamers, and in newer Mario Kart games, if you don't get an early lead, it's chaos. You're stuck getting hit by shells, zapped by lightning, and fighting for 8th place. They'd get so discouraged losing every time. So I came up with a plan. When we play, I intentionally stay in 3rd place. My job? Wreck the CPU players—shell them, block them, make sure they never get close to my wife and son.
+
+  Now they're ecstatic, winning races, and even teasing me for always losing. But honestly? It's way more fun for me like this. And the best part? They'll never know my secret.<break time="1.0s"/> Subscribe for more stories."
+`;
+
 const secondsToSrtTime = (seconds) => {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
@@ -135,7 +170,7 @@ const createSrt = (subtitleArray) => {
   return outputFile;
 };
 
-const generateScript = async (text) => {
+const generateScript = async (text, type) => {
   console.log("Generating script...");
   const scriptResponse = await axios.post(
     OPENAI_API_URL,
@@ -144,7 +179,8 @@ const generateScript = async (text) => {
       messages: [
         {
           role: "system",
-          content: SYSTEM_PROMPT,
+          content:
+            type === "short" ? STORY_SYSTEM_PROMPT : CONFESSION_SYSTEM_PROMPT,
         },
         {
           role: "user",
@@ -233,8 +269,8 @@ const transcribeAudio = async (filePath, timestampGranularities) => {
   }
 };
 
-const generateScriptAndAudio = async (text, voiceId) => {
-  const script = await generateScript(text);
+const generateScriptAndAudio = async (text, voiceId, type) => {
+  const script = await generateScript(text, type);
   const outputFileName = await generateAudio(script, voiceId);
   return { script, outputFileName };
 };
@@ -389,7 +425,10 @@ const generateTextAudio = async (textChain) => {
       `generated-audio/temp-audio-${baseId}-${i}.mp3`
     );
     fs.writeFileSync(tempAudioPath, audioResponse.data);
-    const {transcription, s3URL} = await transcribeAudio(tempAudioPath, "segment");
+    const { transcription, s3URL } = await transcribeAudio(
+      tempAudioPath,
+      "segment"
+    );
     const updatedTranscription = [];
     transcription.forEach((element) => {
       updatedTranscription.push({ ...element, speaker, s3URL });
@@ -404,7 +443,6 @@ const generateTextAudio = async (textChain) => {
 };
 
 module.exports = {
-  SYSTEM_PROMPT,
   createSrt,
   ELEVENLABS_API_URL,
   ELEVENLABS_API_KEY,

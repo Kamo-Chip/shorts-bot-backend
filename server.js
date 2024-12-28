@@ -4,6 +4,7 @@ const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
 const { v4: uuidv4 } = require("uuid");
+const AWS = require("aws-sdk");
 const {
   SYSTEM_PROMPT,
   createSrt,
@@ -26,58 +27,19 @@ const ffprobePath = require("@ffprobe-installer/ffprobe").path;
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 ffmpeg.setFfprobePath(ffprobePath);
+
+// AWS S3 Configuration
+const s3 = new AWS.S3({
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  region: process.env.AWS_REGION,
+});
+
 const app = express();
 
 const port = process.env.PORT || 8080;
 
 app.use(express.json());
-
-// Endpoint to generate script
-app.post("/generate-script", async (req, res) => {
-  const { text } = req.body;
-
-  if (!text) {
-    res.status(400).send("Text is required");
-  }
-
-  try {
-    console.log("Generating script");
-    const scriptResponse = await axios.post(
-      OPENAI_API_URL,
-      {
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: SYSTEM_PROMPT,
-          },
-          {
-            role: "user",
-            content: `${text}`,
-          },
-        ],
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        responseType: "text",
-      }
-    );
-
-    const data = JSON.parse(scriptResponse.data);
-    const script = data.choices[0].message.content;
-    console.log("Successfully generated script: ", script);
-    res.send({
-      message: "Successsfully generated script",
-      script,
-    });
-  } catch (error) {
-    console.error("Error generating script:", error);
-    res.status(500).send(error.message);
-  }
-});
 
 // Endpoint to generate audio
 app.post("/generate-audio", async (req, res) => {
@@ -180,48 +142,73 @@ app.post("/generate-short", async (req, res) => {
   }
 
   try {
-    const { outputFileName } = await generateScriptAndAudio(text, voiceId);
-    const srtFile = await transcribeAudio(outputFileName);
+    const { outputFileName } = await generateScriptAndAudio(text, voiceId, "short");
+    const srtFile = await transcribeAudio(outputFileName, "word");
     console.log("Files: ", outputFileName);
     console.log("SRT: ", srtFile);
     console.log("BG: ", bgVideo);
     const outputFile = await generateClip(outputFileName, srtFile, bgVideo);
-    res.send(`Successfully generated video: ${outputFile}`);
+
+    // Upload the file to S3
+    console.log("Uploading audio file to S3...");
+    const fileStream = fs.createReadStream(outputFile);
+    const params = {
+      Bucket: process.env.S3_BUCKET_NAME,
+      Key: outputFile,
+      Body: fileStream,
+      ContentType: "video/mp4",
+      ACL: "public-read", // Makes the file publicly accessible
+    };
+
+    const uploadResult = await s3.upload(params).promise();
+
+    res.send({
+      message: `Successfully generated short`,
+      url: uploadResult.Location,
+    });
   } catch (error) {
     console.error("Failed to generate short: ", error);
     res.status(500).send("Failed to generate short");
   }
 });
 
-// Endpoint to generate text conversation
-app.post("/generate-text-conversation", async (req, res) => {
-  const { text } = req.body;
+// Endpoint to generate confession
+app.post("/generate-confession", async (req, res) => {
+  const { bgVideo, text, voiceId } = req.body;
 
-  if (!text) {
-    res.status(400).send("Text is required");
+  if (!bgVideo || !text || !voiceId) {
+    res.status(400).send("There are missing fields");
   }
 
   try {
-    await generateTextConversation(text);
+    const { outputFileName } = await generateScriptAndAudio(text, voiceId, "confession");
+    const srtFile = await transcribeAudio(outputFileName, "word");
+    console.log("Files: ", outputFileName);
+    console.log("SRT: ", srtFile);
+    console.log("BG: ", bgVideo);
+    const outputFile = await generateClip(outputFileName, srtFile, bgVideo);
 
-    res.send("Successfully generated text conversation");
+    // Upload the file to S3
+    console.log("Uploading audio file to S3...");
+    const fileStream = fs.createReadStream(outputFile);
+    const params = {
+      Bucket: process.env.S3_BUCKET_NAME,
+      Key: outputFile,
+      Body: fileStream,
+      ContentType: "video/mp4",
+      ACL: "public-read", // Makes the file publicly accessible
+    };
+
+    const uploadResult = await s3.upload(params).promise();
+
+    res.send({
+      message: `Successfully generated confession`,
+      url: uploadResult.Location,
+    });
   } catch (error) {
-    console.error("Error generating text conversation:", error);
-    res.status(500).send(error.message);
+    console.error("Failed to generate confession: ", error);
+    res.status(500).send("Failed to generate confession");
   }
-});
-
-app.post("/generate-text-audio", async (req, res) => {
-  const { textChain: textChainStr } = req.body;
-
-  try {
-    await generateTextAudio(textChainStr);
-  } catch (error) {
-    console.error("Error generating conversation audio:", error);
-    res.status(500).send(error.message);
-  }
-
-  res.send("Done");
 });
 
 app.post("/generate-text-conversation-and-audio", async (req, res) => {
