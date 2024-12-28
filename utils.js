@@ -48,42 +48,57 @@ Yeah, I need a new dentist... Subscribe for more stories"
 `;
 
 const TEXT_SYSTEM_PROMPT = `
-  You are a creative assistant that transforms Reddit posts into engaging and entertaining text conversations for YouTube Shorts.
-  
-  Your outputs must:
-  - Begin with a captivating and attention-grabbing first message.
-  - Use relatable and humorous dialogue between 2 characters to convey the story of the post.
-  - Stay concise and fit within a 1-minute format.
-  - End with a punchline, takeaway, or memorable conclusion.
-  - Prioritize humor, exaggeration, and dynamism while keeping the essence of the post intact.
-  - Avoid unnecessary complexity to maximize viewer engagement.
-  - Do not style the output e.g do not add asterisks. The text is plain text
-  - End with "Subscribe for more funny chats"
-  - Output should be a json array, for example:
-    [{speaker: "John", text: "Hello there", sex: "m"}, {speaker: "Grievous", text: "Ah general Kenobi", sex: "m"}, { "speaker": "Narrator", "text": "Subscribe for more funny chats!", sex: "m" }]
+  You are a creative assistant specializing in transforming Reddit posts into engaging and entertaining text conversations designed for YouTube Shorts.
 
-  Some abbreviations to take note of. When you see them write out the full term:
-  - AITA: Am I The Asshole
-  - TIFU: Today I Fucked Up
+  **Your Goal**: Create a punchy, funny, and fast-paced back-and-forth dialogue that clearly conveys the story with a beginning, conflict, and resolution, while captivating the audience in a highly entertaining way.
 
-  Example Post Input:
+  **Output Requirements**:
+  - **Clear Structure**: Ensure each conversation includes:
+    - A **hook**: Start with an attention-grabbing line that provides clear context and introduces the conflict.
+    - A **conflict**: Highlight the central issue or tension in a humorous, relatable, and expressive way, using dramatic or exaggerated reactions where appropriate, while maintaining the core details of the story.
+    - A **resolution**: Conclude with a punchline, takeaway, or memorable zinger that ties the conversation together.
+  - Ensure the **context** is always clear by including essential details from the Reddit post (e.g., relationships, background) early in the conversation.
+  - **Strict Two-Speaker Rule**: The conversation must alternate between exactly two characters. No additional characters are allowed. 
+  - Ensure the **context** is always clear by including essential details from the Reddit post (e.g., relationships, background) early in the conversation.
+  - Use rapid-fire, witty, and dynamic exchanges **between exactly two characters only**. Do not include additional speakers. 
+  - **The narrator's only line**: The narrator should exclusively deliver the final message, "Subscribe for more funny chats."
+  - Incorporate expressive reactions, surprises, or playful jabs to keep the dialogue lively and engaging.
+  - Avoid vagueness. Ensure every line contributes to the story's clarity or humor.
+  - Keep each line concise, ensuring the entire conversation fits within a 1-minute video format.
+  - Include the tag '<break time="1.0s"/>' at the end of the second-to-last line of dialogue.
+  - Always conclude with the narrator's line: "Subscribe for more funny chats."
+  - Use plain text only—no formatting like asterisks, italics, or emojis.
+  - Come up with funny names for the speakers
+  - Format the response as a JSON array. Each object in the array must include:
+    - **'speaker'**: The name of the character speaking.
+    - **'text'**: The dialogue for that character.
+    - **'sex'**: The gender of the speaker, denoted as "m" for male or "f" for female.
+
+  **Important Notes**:
+  - Expand abbreviations when encountered:
+    - **AITA**: Am I The Asshole
+    - **TIFU**: Today I Fucked Up
+  - The conversation should only feature **two speakers**.
+  - The narrator speaks only at the end, delivering: "Subscribe for more funny chats."
+  - Ensure the conversation clearly conveys the core context of the Reddit post.
+  - Creativity is encouraged, but keep each line short, snappy, and entertaining. Avoid long-winded explanations or irrelevant dialogue.
+  - Use humor, exaggeration, and dynamism to keep the audience entertained and engaged.
+  - Ignore any text following 'TLDR' or 'Edit' sections. These should not be included in the output.
+
+  **Example Post Input**:
   "My (27F) boyfriend (29M) can't get it up and refuses to see a professional. We've been together for over a year. He's healthy, successful, and we get along great otherwise. But he says porn has made it hard for him to get aroused IRL, and he won't get help. I feel rejected and don't know what to do."
 
-  Example Output:
+  **Example Output**:
   [
-  { "speaker": "Friend", "text": "So, how's Mr. Perfect treating you?", "sex": "f" },
-  { "speaker": "Girlfriend", "text": "Honestly? He's smart, successful, kind… BUT…", "sex": "f" },
-  { "speaker": "Friend", "text": "Uh oh, what's the 'but'? Bad breath? Lives with his mom?", "sex": "f" },
-  { "speaker": "Girlfriend", "text": "Worse… he can't, um, get it up. And he refuses to see a professional.", "sex": "f" },
-  { "speaker": "Friend", "text": "What?! Wait—like, ever?", "sex": "f" },
-  { "speaker": "Girlfriend", "text": "Since day one. He says he got too used to… *the hub*.", "sex": "f" },
-  { "speaker": "Friend", "text": "Oh no. So, he's buffering in real life?", "sex": "f" },
-  { "speaker": "Girlfriend", "text": "Exactly! Out of every 10 tries, we get maybe 1 success, 3-4 false starts, and 5-6… complete crashes.", "sex": "f" },
-  { "speaker": "Friend", "text": "Girl, that's not romance, that's tech support!", "sex": "f" },
-  { "speaker": "Girlfriend", "text": "Right?! I love him, but I'm running out of 'it's okays' to give.", "sex": "f" },
-  { "speaker": "Friend", "text": "Listen, he either reboots himself with professional help, or you upgrade to better hardware.", "sex": "f" },
-  { "speaker": "Narrator", "text": "Subscribe for more funny chats!", "sex": "m" }
-]
+    { "speaker": "Friend", "text": "Wait, so your boyfriend just… can't perform?", "sex": "f" },
+    { "speaker": "Girlfriend", "text": "Exactly. It's like his system is permanently down.", "sex": "f" },
+    { "speaker": "Friend", "text": "What's the excuse? Hardware malfunction?", "sex": "f" },
+    { "speaker": "Girlfriend", "text": "Worse. He says he's been corrupted… by the corn hub.", "sex": "f" },
+    { "speaker": "Friend", "text": "No way. So, he's buffering IRL and refuses to reboot?", "sex": "f" },
+    { "speaker": "Girlfriend", "text": "Yup. No updates, no tech support, nothing.", "sex": "f" },
+    { "speaker": "Friend", "text": "Girl, tell him to get professional help or you're switching devices. <break time='1.0s'/>", "sex": "f" },
+    { "speaker": "Narrator", "text": "Subscribe for more funny chats!", "sex": "m" }
+  ]
 `;
 
 const secondsToSrtTime = (seconds) => {
@@ -179,6 +194,7 @@ const generateAudio = async (script, voiceId) => {
 
 const transcribeAudio = async (filePath, timestampGranularities) => {
   console.log("Transcribing audio...");
+
   const formData = new FormData();
   formData.append("file", fs.createReadStream(filePath));
   formData.append("timestamp_granularities[]", timestampGranularities);
@@ -202,7 +218,18 @@ const transcribeAudio = async (filePath, timestampGranularities) => {
       end: item.end,
     }));
     console.log("Successfully transcribed audio: ", transcription);
-    return transcription;
+
+    console.log("Uploading transcription to s3...");
+    const fileStream = fs.createReadStream(filePath);
+    const params = {
+      Bucket: process.env.S3_BUCKET_NAME,
+      Key: `${filePath}`,
+      Body: fileStream,
+      ContentType: "audio/mpeg",
+      ACL: "public-read", // Makes the file publicly accessible
+    };
+    const uploadResult = await s3.upload(params).promise();
+    return { transcription, s3URL: uploadResult.Location };
   }
 };
 
@@ -323,6 +350,7 @@ const generateTextAudio = async (textChain) => {
 
   const audioFiles = [];
   const fullTranscription = [];
+  const baseId = uuidv4();
 
   for (let i = 0; i < textChain.length; i++) {
     const { speaker, text, sex } = textChain[i];
@@ -358,14 +386,13 @@ const generateTextAudio = async (textChain) => {
     );
 
     const tempAudioPath = path.join(
-      __dirname,
-      `generated-audio/temp-audio-${i}.mp3`
+      `generated-audio/temp-audio-${baseId}-${i}.mp3`
     );
     fs.writeFileSync(tempAudioPath, audioResponse.data);
-    const transcription = await transcribeAudio(tempAudioPath, "segment");
+    const {transcription, s3URL} = await transcribeAudio(tempAudioPath, "segment");
     const updatedTranscription = [];
     transcription.forEach((element) => {
-      updatedTranscription.push({ ...element, speaker });
+      updatedTranscription.push({ ...element, speaker, s3URL });
     });
     fullTranscription.push(...updatedTranscription);
     audioFiles.push(tempAudioPath);
