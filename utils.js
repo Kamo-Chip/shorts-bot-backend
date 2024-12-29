@@ -28,7 +28,14 @@ const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 const OPENAI_WHISPER_API_URL = "https://api.openai.com/v1/audio/transcriptions";
 
-const STORY_SYSTEM_PROMPT = `You are a world class YouTube short creator that transforms Reddit posts into engaging YouTube shorts, ensuring the final output is no longer than 1 minute. Your goal is to condense the story while keeping it fun, engaging, and true to the original tone. Prioritize punchy storytelling, focus on the key moments, and leave out unnecessary details. Maintain humor or drama as appropriate to capture the audience's attention. Include a clear beginning, middle, and end, and avoid rushing the delivery. The intro should always match the one you are given, only replace profanity. Add 'Subscribe for more stories' as the last line.
+const STORY_SYSTEM_PROMPT = `You are a world class YouTube short creator that transforms Reddit posts into engaging YouTube shorts, ensuring the final output is no longer than 1 minute. Your goal is to condense the story while keeping it fun, engaging, and true to the original tone. Prioritize punchy storytelling, focus on the key moments, and leave out unnecessary details. Maintain humor or drama as appropriate to capture the audience's attention. Include a clear beginning, middle, and end, and avoid rushing the delivery. The intro should always match the one you are given, only replace profanity.
+
+**Important Notes**:
+- Expand abbreviations when encountered:
+  - **AITA**: Am I The Asshole
+  - **TIFU**: Today I Fucked Up
+  - **MIL**: Mother In Law
+  - **SO**: Significant Other
 
 Example Post Input:
 "Today I Fucked Up by accidentally getting sexual with my dentist, again.
@@ -44,7 +51,7 @@ Example Short Output:
 "Today I messed up by accidentally getting sexual with my dentist, again!
 First visit, my dentist says something about 'us being strangers.' And I reply, 'Oh, you're not a stranger—you've been in my mouth for 20 minutes!' His face turned red, but he stayed professional.
 Second visit, I'm determined to behave. Five minutes in, he's red-faced again, and I'm like, 'What did I do this time?' Then it hits me: he's wearing grape-flavored gloves... and I've been licking his fingers the whole time.
-Yeah, I need a new dentist... Subscribe for more stories"
+Yeah, I need a new dentist..."
 `;
 
 const TEXT_SYSTEM_PROMPT = `
@@ -78,6 +85,8 @@ const TEXT_SYSTEM_PROMPT = `
   - Expand abbreviations when encountered:
     - **AITA**: Am I The Asshole
     - **TIFU**: Today I Fucked Up
+    - **MIL**: Mother In Law
+    - **SO**: Significant Other
   - The conversation should only feature **two speakers**.
   - The narrator speaks only at the end, delivering: "Subscribe for more funny chats."
   - Ensure the conversation clearly conveys the core context of the Reddit post.
@@ -113,9 +122,13 @@ const CONFESSION_SYSTEM_PROMPT = `
     - **A Resolution**: End with a satisfying or funny punchline that wraps up the story and leaves a lasting impression.
   - **Essential Context**: Clearly establish relationships and relevant background early in the script for clarity.
   - **Humor and Drama**: Maintain an engaging tone using expressive, dynamic storytelling, prioritizing snappy and concise sentences.
-  - **Final Call to Action**: Always end with "Subscribe for more stories."
 
   **Important Notes**:
+  - Expand abbreviations when encountered:
+    - **AITA**: Am I The Asshole
+    - **TIFU**: Today I Fucked Up
+    - **MIL**: Mother In Law
+    - **SO**: Significant Other
   - The story must be told from a first person perspective
   - Do not try to be family friendly. Stay true to the tone of the post.
   - Condense the story by focusing on key moments and removing unnecessary details.
@@ -133,7 +146,7 @@ const CONFESSION_SYSTEM_PROMPT = `
   **Example Output**:
   I cheat when I play Mario Kart with my wife and son. Here's the thing: my wife and son aren't gamers, and in newer Mario Kart games, if you don't get an early lead, it's chaos. You're stuck getting hit by shells, zapped by lightning, and fighting for 8th place. They'd get so discouraged losing every time. So I came up with a plan. When we play, I intentionally stay in 3rd place. My job? Wreck the CPU players—shell them, block them, make sure they never get close to my wife and son.
 
-  Now they're ecstatic, winning races, and even teasing me for always losing. But honestly? It's way more fun for me like this. And the best part? They'll never know my secret.<break time="1.0s"/> Subscribe for more stories."
+  Now they're ecstatic, winning races, and even teasing me for always losing. But honestly? It's way more fun for me like this. And the best part? They'll never know my secret."
 `;
 
 const secondsToSrtTime = (seconds) => {
@@ -275,10 +288,10 @@ const generateScriptAndAudio = async (text, voiceId, type) => {
   return { script, outputFileName };
 };
 
-const generateClip = async (audioFile, srtFile, bgVideo) => {
+const generateClip = async (audioFile, srtFile, bgVideo, bgSound) => {
   return new Promise((resolve, reject) => {
     const outputFile = `generated-clips/${uuidv4()}.mp4`;
-    const command = `ffmpeg -i ${bgVideo} -i ${audioFile} -vf "subtitles=${srtFile}:force_style='Alignment=10,Fontsize=36'" -c:v libx264 -c:a aac -b:a 192k -pix_fmt yuv420p -shortest ${outputFile}`;
+    const command = `ffmpeg -i ${bgVideo} -i ${audioFile} -i ${bgSound} -filter_complex "[2:a]volume=0.1[bg];[1:a][bg]amix=inputs=2:duration=shortest:dropout_transition=3[a]" -map 0:v -map "[a]" -vf "subtitles=${srtFile}:force_style='Alignment=10,Fontsize=36,Fontname=Arial,PrimaryColour=&HFFFFFF&,SecondaryColour=&H000000&,OutlineColour=&H000000&,BackColour=&H80000000&,BorderStyle=1,Outline=2,Shadow=3'" -c:v libx264 -c:a aac -b:a 192k -pix_fmt yuv420p -shortest ${outputFile}`;
 
     console.log("Generating clip...");
     exec(command, (error, stdout, stderr) => {

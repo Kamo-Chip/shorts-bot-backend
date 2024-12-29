@@ -135,9 +135,9 @@ app.post("/generate-clip", async (req, res) => {
 
 // Endpoint to generate script, audio, transcription and clip
 app.post("/generate-short", async (req, res) => {
-  const { bgVideo, text, voiceId } = req.body;
+  const { bgVideo, text, voiceId, bgSound } = req.body;
 
-  if (!bgVideo || !text || !voiceId) {
+  if (!bgVideo || !text || !voiceId || !bgSound) {
     res.status(400).send("There are missing fields");
   }
 
@@ -147,7 +147,7 @@ app.post("/generate-short", async (req, res) => {
     console.log("Files: ", outputFileName);
     console.log("SRT: ", srtFile);
     console.log("BG: ", bgVideo);
-    const outputFile = await generateClip(outputFileName, srtFile, bgVideo);
+    const outputFile = await generateClip(outputFileName, srtFile, bgVideo, bgSound);
 
     // Upload the file to S3
     console.log("Uploading audio file to S3...");
@@ -174,9 +174,9 @@ app.post("/generate-short", async (req, res) => {
 
 // Endpoint to generate confession
 app.post("/generate-confession", async (req, res) => {
-  const { bgVideo, text, voiceId } = req.body;
+  const { bgVideo, text, voiceId, bgSound } = req.body;
 
-  if (!bgVideo || !text || !voiceId) {
+  if (!bgVideo || !text || !voiceId || !bgSound) {
     res.status(400).send("There are missing fields");
   }
 
@@ -186,7 +186,7 @@ app.post("/generate-confession", async (req, res) => {
     console.log("Files: ", outputFileName);
     console.log("SRT: ", srtFile);
     console.log("BG: ", bgVideo);
-    const outputFile = await generateClip(outputFileName, srtFile, bgVideo);
+    const outputFile = await generateClip(outputFileName, srtFile, bgVideo, bgSound);
 
     // Upload the file to S3
     console.log("Uploading audio file to S3...");
