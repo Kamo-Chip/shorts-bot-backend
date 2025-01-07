@@ -115,6 +115,14 @@ app.post("/generate-short", async (req, res) => {
       bgSound
     );
 
+
+
+
+
+
+
+    
+
     // Upload the file to S3
     console.log("Uploading audio file to S3...");
     const fileStream = fs.createReadStream(outputFile);
