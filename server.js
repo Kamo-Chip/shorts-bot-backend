@@ -12,6 +12,7 @@ const {
   ELEVENLABS_API_KEY,
   OPENAI_API_URL,
   OPENAI_WHISPER_API_URL,
+  generateScript,
   generateScriptAndAudio,
   transcribeAudio,
   generateClip,
@@ -41,68 +42,17 @@ const port = process.env.PORT || 8080;
 
 app.use(express.json());
 
-// Endpoint to generate audio
-app.post("/generate-audio", async (req, res) => {
-  const { script, voiceId } = req.body;
-
-  if (!script || !voiceId) {
-    res.status(400).send("Script and voice ID is required");
-  }
+app.post("/generate-script", async (req, res) => {
+  const { text } = req.body;
 
   try {
-    console.log("Generating audio...");
-    const outputFileName = `generated-audio/${uuidv4()}.mp3`;
-    const outputPath = path.join(__dirname, outputFileName);
-
-    const audioResponse = await axios.post(
-      `${ELEVENLABS_API_URL}/${voiceId}`,
-      {
-        text: script,
-        voice_settings: { stability: 0.5, similarity_boost: 0.75 },
-      },
-      {
-        headers: {
-          "xi-api-key": ELEVENLABS_API_KEY,
-          "Content-Type": "application/json",
-        },
-        responseType: "arraybuffer",
-      }
-    );
-    fs.writeFileSync(outputPath, audioResponse.data);
-    console.log("Successfully generated audio: ", outputFileName);
-    res.send("Successfully generated audio");
+    const script = await generateScript(text, "short");
+    res.send({ message: "Successfully generated script", script });
   } catch (error) {
-    console.error("Error generating audio:", error);
-    res.status(500).send(error.message);
+    console.error(error.message);
+    res.status(500).send(`Failed to generate script: ${error.message}`);
   }
 });
-
-// Endpoint to generate both script and audio
-app.post("/generate-script-and-audio", async (req, res) => {
-  const { text, voiceId } = req.body;
-
-  if (!text || !voiceId) {
-    res.status(400).send("Text and Voice ID are required");
-    return;
-  }
-
-  try {
-    const { script, outputFileName } = await generateScriptAndAudio(
-      text,
-      voiceId
-    );
-
-    res.send({
-      message: "Successfully generated script and audio",
-      script,
-      audioFile: outputFileName,
-    });
-  } catch (error) {
-    console.error("Error generating script and audio:", error.message);
-    res.status(500).send({ error: "An unexpected error occurred" });
-  }
-});
-
 // Endpoint to transcribe audio
 app.post("/transcribe-audio", async (req, res) => {
   const { filePath, timestampGranularities } = req.body;
@@ -112,8 +62,15 @@ app.post("/transcribe-audio", async (req, res) => {
   }
 
   try {
-    await transcribeAudio(filePath, timestampGranularities);
-    res.send(`Successfully transcribed audio`);
+    const transcription = await transcribeAudio(
+      filePath,
+      timestampGranularities
+    );
+
+    res.send({
+      message: "Successfully transcribed audio",
+      transcription,
+    });
   } catch (error) {
     console.error("Error transcribing audio: ", error.message);
     res.status(500).send({ error: "An unexpected error occurred" });
@@ -142,12 +99,21 @@ app.post("/generate-short", async (req, res) => {
   }
 
   try {
-    const { outputFileName } = await generateScriptAndAudio(text, voiceId, "short");
+    const { outputFileName } = await generateScriptAndAudio(
+      text,
+      voiceId,
+      "short"
+    );
     const srtFile = await transcribeAudio(outputFileName, "word");
     console.log("Files: ", outputFileName);
     console.log("SRT: ", srtFile);
     console.log("BG: ", bgVideo);
-    const outputFile = await generateClip(outputFileName, srtFile, bgVideo, bgSound);
+    const outputFile = await generateClip(
+      outputFileName,
+      srtFile,
+      bgVideo,
+      bgSound
+    );
 
     // Upload the file to S3
     console.log("Uploading audio file to S3...");
@@ -174,19 +140,29 @@ app.post("/generate-short", async (req, res) => {
 
 // Endpoint to generate confession
 app.post("/generate-confession", async (req, res) => {
-  const { bgVideo, text, voiceId, bgSound } = req.body;
+  const { bgVideo, text, voiceId, bgSound, isVerbatim } = req.body;
 
-  if (!bgVideo || !text || !voiceId || !bgSound) {
+  if (!bgVideo || !text || !voiceId || !bgSound || !isVerbatim) {
     res.status(400).send("There are missing fields");
   }
 
   try {
-    const { outputFileName } = await generateScriptAndAudio(text, voiceId, "confession");
+    const { outputFileName } = await generateScriptAndAudio(
+      text,
+      voiceId,
+      "confession",
+      isVerbatim
+    );
     const srtFile = await transcribeAudio(outputFileName, "word");
     console.log("Files: ", outputFileName);
     console.log("SRT: ", srtFile);
     console.log("BG: ", bgVideo);
-    const outputFile = await generateClip(outputFileName, srtFile, bgVideo, bgSound);
+    const outputFile = await generateClip(
+      outputFileName,
+      srtFile,
+      bgVideo,
+      bgSound
+    );
 
     // Upload the file to S3
     console.log("Uploading audio file to S3...");

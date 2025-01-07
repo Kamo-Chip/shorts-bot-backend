@@ -68,14 +68,14 @@ const TEXT_SYSTEM_PROMPT = `
   - **Strict Two-Speaker Rule**: The conversation must alternate between exactly two characters. No additional characters are allowed. 
   - Ensure the **context** is always clear by including essential details from the Reddit post (e.g., relationships, background) early in the conversation.
   - Use rapid-fire, witty, and dynamic exchanges **between exactly two characters only**. Do not include additional speakers. 
-  - **The narrator's only line**: The narrator should exclusively deliver the final message, "Subscribe for more funny chats."
+  - **The narrator's only line**: The narrator should exclusively deliver the final message, "Subscribe for more chats."
   - Incorporate expressive reactions, surprises, or playful jabs to keep the dialogue lively and engaging.
   - Avoid vagueness. Ensure every line contributes to the story's clarity or humor.
   - Keep each line concise, ensuring the entire conversation fits within a 1-minute video format.
   - Include the tag '<break time="1.0s"/>' at the end of the second-to-last line of dialogue.
-  - Always conclude with the narrator's line: "Subscribe for more funny chats."
+  - Always conclude with the narrator's line: "Subscribe for more chats."
   - Use plain text only—no formatting like asterisks, italics, or emojis.
-  - Come up with funny names for the speakers
+  - Come up with funny names for the speakers. Do not give them default names.
   - Format the response as a JSON array. Each object in the array must include:
     - **'speaker'**: The name of the character speaking.
     - **'text'**: The dialogue for that character.
@@ -88,7 +88,7 @@ const TEXT_SYSTEM_PROMPT = `
     - **MIL**: Mother In Law
     - **SO**: Significant Other
   - The conversation should only feature **two speakers**.
-  - The narrator speaks only at the end, delivering: "Subscribe for more funny chats."
+  - The narrator speaks only at the end, delivering: "Subscribe for more chats."
   - Ensure the conversation clearly conveys the core context of the Reddit post.
   - Creativity is encouraged, but keep each line short, snappy, and entertaining. Avoid long-winded explanations or irrelevant dialogue.
   - Use humor, exaggeration, and dynamism to keep the audience entertained and engaged.
@@ -100,13 +100,13 @@ const TEXT_SYSTEM_PROMPT = `
   **Example Output**:
   [
     { "speaker": "Friend", "text": "Wait, so your boyfriend just… can't perform?", "sex": "f" },
-    { "speaker": "Girlfriend", "text": "Exactly. It's like his system is permanently down.", "sex": "f" },
+    { "speaker": "Bestie", "text": "Exactly. It's like his system is permanently down.", "sex": "f" },
     { "speaker": "Friend", "text": "What's the excuse? Hardware malfunction?", "sex": "f" },
-    { "speaker": "Girlfriend", "text": "Worse. He says he's been corrupted… by the corn hub.", "sex": "f" },
+    { "speaker": "Bestie", "text": "Worse. He says he's been corrupted… by the corn hub.", "sex": "f" },
     { "speaker": "Friend", "text": "No way. So, he's buffering IRL and refuses to reboot?", "sex": "f" },
-    { "speaker": "Girlfriend", "text": "Yup. No updates, no tech support, nothing.", "sex": "f" },
+    { "speaker": "Bestie", "text": "Yup. No updates, no tech support, nothing.", "sex": "f" },
     { "speaker": "Friend", "text": "Girl, tell him to get professional help or you're switching devices. <break time='1.0s'/>", "sex": "f" },
-    { "speaker": "Narrator", "text": "Subscribe for more funny chats!", "sex": "m" }
+    { "speaker": "Narrator", "text": "Subscribe for more chats!", "sex": "m" }
   ]
 `;
 
@@ -160,10 +160,50 @@ const secondsToSrtTime = (seconds) => {
   )}:${String(secs).padStart(2, "0")},${String(milliseconds).padStart(3, "0")}`;
 };
 
-const createSrt = (subtitleArray) => {
+const mergeSubtitles = (subtitleArray) => {
+  const mergedSubtitles = [];
+  subtitleArray.forEach((item) => {
+    if (
+      mergedSubtitles.length > 0 &&
+      mergedSubtitles[mergedSubtitles.length - 1].end === item.start
+    ) {
+      // Append the current word to the last merged subtitle
+      mergedSubtitles[mergedSubtitles.length - 1].word += ` ${item.word}`;
+      mergedSubtitles[mergedSubtitles.length - 1].end = item.end;
+    } else {
+      // Add as a new subtitle
+      mergedSubtitles.push({ ...item });
+    }
+  });
+
+  return mergedSubtitles;
+};
+
+const formatContinuity = (mergedSubtitles) => {
+  const MIN_DURATION = 0.15; // Minimum duration in seconds (100 ms)
+  const PADDING_FACTOR = 0.2;
+  const MAX_PADDING = 0.4;
+  for (let i = 0; i < mergedSubtitles.length; i++) {
+    if (i < mergedSubtitles.length - 1) {
+      // Pad up time
+      if (mergedSubtitles[i].end !== mergedSubtitles[i + 1].start) {
+        const gap = mergedSubtitles[i + 1].start - mergedSubtitles[i].end;
+        mergedSubtitles[i].end += Math.min(gap * PADDING_FACTOR, MAX_PADDING);
+      }
+    }
+
+    // Handle zero-duration subtitles
+    if (mergedSubtitles[i].end - mergedSubtitles[i].start <= 0) {
+      mergedSubtitles[i].end = mergedSubtitles[i].start + MIN_DURATION;
+    }
+  }
+
+  return mergedSubtitles;
+};
+
+const formatToText = (mergedSubtitles) => {
   let srtContent = "";
-  const outputFile = `generated-subtitles/${uuidv4()}.srt`;
-  subtitleArray.forEach((item, index) => {
+  mergedSubtitles.forEach((item, index) => {
     const lineNumber = index + 1;
     const startTime = secondsToSrtTime(item.start);
     const endTime = secondsToSrtTime(item.end);
@@ -171,7 +211,22 @@ const createSrt = (subtitleArray) => {
 
     srtContent += `${lineNumber}\n${startTime} --> ${endTime}\n${text}\n\n`;
   });
+  return srtContent;
+};
 
+const createSrt = (subtitleArray) => {
+  const outputFile = `generated-subtitles/${uuidv4()}.srt`;
+
+  // Merge subtitles with the same end time
+  let mergedSubtitles = mergeSubtitles(subtitleArray);
+
+  // Ensure continuous time segments and handle zero-duration cases
+  mergedSubtitles = formatContinuity(mergedSubtitles);
+
+  // Generate SRT content
+  const srtContent = formatToText(mergedSubtitles);
+
+  // Write the file
   fs.writeFile(outputFile, srtContent.trim(), (err) => {
     if (err) {
       console.error("Error writing file: ", err);
@@ -282,8 +337,20 @@ const transcribeAudio = async (filePath, timestampGranularities) => {
   }
 };
 
-const generateScriptAndAudio = async (text, voiceId, type) => {
-  const script = await generateScript(text, type);
+const generateScriptAndAudio = async (
+  text,
+  voiceId,
+  type,
+  isVerbatim = "f"
+) => {
+  let script = "";
+
+  if (isVerbatim === "f") {
+    script = await generateScript(text, type);
+  } else {
+    script = text;
+  }
+
   const outputFileName = await generateAudio(script, voiceId);
   return { script, outputFileName };
 };
@@ -291,7 +358,8 @@ const generateScriptAndAudio = async (text, voiceId, type) => {
 const generateClip = async (audioFile, srtFile, bgVideo, bgSound) => {
   return new Promise((resolve, reject) => {
     const outputFile = `generated-clips/${uuidv4()}.mp4`;
-    const command = `ffmpeg -i ${bgVideo} -i ${audioFile} -i ${bgSound} -filter_complex "[2:a]volume=0.1[bg];[1:a][bg]amix=inputs=2:duration=shortest:dropout_transition=3[a]" -map 0:v -map "[a]" -vf "subtitles=${srtFile}:force_style='Alignment=10,Fontsize=36,Fontname=Arial,PrimaryColour=&HFFFFFF&,SecondaryColour=&H000000&,OutlineColour=&H000000&,BackColour=&H80000000&,BorderStyle=1,Outline=2,Shadow=3'" -c:v libx264 -c:a aac -b:a 192k -pix_fmt yuv420p -shortest ${outputFile}`;
+
+    const command = `ffmpeg -i ${bgVideo} -i ${audioFile} -i ${bgSound} -filter_complex "[2:a]volume=0.2[bg];[1:a][bg]amix=inputs=2:duration=shortest:dropout_transition=3[a];[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920:(iw-1080)/2:(ih-1920)/2[video];[video]subtitles=${srtFile}:force_style='Alignment=10,Fontsize=12,Fontname=Arial,PrimaryColour=&HFFFFFF&,SecondaryColour=&H000000&,OutlineColour=&H000000&,BackColour=&H80000000&,BorderStyle=1,Outline=1,Shadow=1,Bold=1'[final]" -map "[final]" -map "[a]" -c:v libx264 -c:a aac -b:a 192k -pix_fmt yuv420p -shortest ${outputFile}`;
 
     console.log("Generating clip...");
     exec(command, (error, stdout, stderr) => {
@@ -462,6 +530,7 @@ module.exports = {
   OPENAI_API_URL,
   OPENAI_WHISPER_API_URL,
   generateScriptAndAudio,
+  generateScript,
   transcribeAudio,
   generateClip,
   TEXT_SYSTEM_PROMPT,
