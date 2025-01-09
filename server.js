@@ -94,8 +94,6 @@ app.post("/generate-clip", async (req, res) => {
 
 
 
-
-
 // Endpoint to generate script, audio, transcription and clip
 app.post("/generate-short", async (req, res) => {
   const { bgVideo, text, voiceId, bgSound } = req.body;
